@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - AMAP_KEY=${AMAP_KEY}
+      - RAG_API_KEY=${RAG_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend/uploads:/app/backend/uploads
+      - ./backend/vector_stores:/app/backend/vector_stores
+      - ./backend/app.db:/app/backend/app.db
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

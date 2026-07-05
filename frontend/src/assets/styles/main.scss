@@ -1,0 +1,46 @@
+@use './variables' as *;
+@use './mixins' as *;
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: $font-family;
+  background: $bg-body;
+  color: $text-primary;
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+// ===== 工具类 =====
+.text-center { text-align: center; }
+.text-primary { color: $primary-color; }
+.text-secondary { color: $text-secondary; }
+.text-light { color: $text-light; }
+
+.mt-sm { margin-top: $spacing-sm; }
+.mt-md { margin-top: $spacing-md; }
+.mt-lg { margin-top: $spacing-lg; }
+
+.mb-sm { margin-bottom: $spacing-sm; }
+.mb-md { margin-bottom: $spacing-md; }
+.mb-lg { margin-bottom: $spacing-lg; }
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

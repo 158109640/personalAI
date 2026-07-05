@@ -1,0 +1,56 @@
+@use './variables' as *;
+
+// 弹性居中
+@mixin flex-center($direction: row) {
+  display: flex;
+  flex-direction: $direction;
+  justify-content: center;
+  align-items: center;
+}
+
+// 弹性居间
+@mixin flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+// 绝对居中
+@mixin absolute-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+// 卡片样式
+@mixin card {
+  background: $bg-white;
+  border-radius: $radius-md;
+  box-shadow: $shadow-md;
+  padding: $spacing-lg;
+}
+
+// 文本省略
+@mixin text-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// 按钮重置
+@mixin button-reset {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+// 响应式断点
+@mixin mobile {
+  @media (max-width: 768px) { @content; }
+}
+
+@mixin tablet {
+  @media (max-width: 1024px) { @content; }
+}
