@@ -1,0 +1,34 @@
+# --- 忽略后端模型文件夹 ---
+# 忽略 backend/ 下的 models/ 整个目录
+backend/models/
+
+# 或者如果你想更精确，只忽略 Xorbits 子目录
+backend/models/Xorbits/
+
+# 如果 models/ 下还有其他大文件，统一忽略
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.onnx
+
+# --- 其他需要忽略的后端文件 ---
+# 虚拟环境（你已经有 venv/）
+venv/
+.venv/
+
+# ChromaDB 数据（通常很大，无需提交）
+backend/chroma_db/
+
+# 上传文件和向量存储（运行时数据，无需提交）
+uploads/
+vector_stores/
+
+# 数据库文件
+*.db
+app.db
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
