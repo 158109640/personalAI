@@ -1,47 +1,13 @@
 <template>
   <div class="chat-layout">
     <!-- 左侧：会话列表 -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <el-button type="primary" size="default" @click="createNewConversation" style="width: 100%">
-          <el-icon><Plus /></el-icon>
-          新建对话
-        </el-button>
-      </div>
-
-      <div class="conversation-list">
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          :class="['conversation-item', { active: conv.id === currentConversationId }]"
-          @click="switchConversation(conv.id)"
-        >
-          <div class="conv-info">
-            <div class="conv-title">{{ conv.title }}</div>
-            <div class="conv-time">{{ formatTime(conv.updated_at) }}</div>
-          </div>
-          <el-button
-            type="danger"
-            size="small"
-            text
-            @click.stop="deleteConversation(conv.id)"
-            class="delete-btn"
-          >
-            <el-icon><Delete /></el-icon>
-          </el-button>
-        </div>
-
-        <div v-if="conversations.length === 0" class="empty-conversations">
-          <p>暂无对话记录</p>
-          <p class="hint">点击上方「新建对话」开始</p>
-        </div>
-      </div>
-    </aside>
+    <Conversation ref="conversationRef" :conversations="conversations" :currentConversationId="currentConversationId" @switchConversation="switchConversation" @deleteConversation="deleteConversation" @createNewConversation="createNewConversation" />
 
     <!-- 右侧：聊天区域 -->
     <main class="chat-area">
       <header class="chat-header">
         <div class="header-left">
+          <el-icon class="header-icon pointer" v-if="isMobile" @click="handleConversationList(true)"><DArrowRight /></el-icon>
           <h1>🤖 AI 研发助理</h1>
           <span class="user-info">👤 {{ userStore.userInfo?.username }}</span>
         </div>
@@ -51,7 +17,7 @@
       </header>
 
       <div class="messages-container" ref="messagesContainer">
-        <div v-if="currentConversationId === null" class="empty-state">
+        <div v-if="currentConversationId === 0" class="empty-state">
           <p>💬 选择或创建一个对话开始</p>
         </div>
 
@@ -74,7 +40,7 @@
         </template>
       </div>
 
-      <footer class="input-container" v-if="currentConversationId !== null">
+      <footer class="input-container" v-if="currentConversationId !== 0">
         <div v-if="imageList.length > 0" class="image-preview-list">
           <div v-for="(file, idx) in imageList" :key="idx" class="image-preview-item">
             <img :src="file.url" alt="图片预览" />
@@ -150,88 +116,6 @@
   background: $bg-gray;
 }
 
-.sidebar {
-  width: 280px;
-  background: $bg-white;
-  border-right: 1px solid $border-color;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
-
-.sidebar-header {
-  padding: $spacing-md;
-  border-bottom: 1px solid $border-color;
-}
-
-.conversation-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: $spacing-sm;
-}
-
-.conversation-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: $spacing-sm $spacing-md;
-  border-radius: $radius-sm;
-  cursor: pointer;
-  transition: background $transition-fast;
-  margin-bottom: 2px;
-
-  &:hover {
-    background: $bg-gray;
-    .delete-btn {
-      opacity: 1;
-    }
-  }
-
-  &.active {
-    background: $primary-color;
-    color: $bg-white;
-    .conv-time {
-      color: rgba(255, 255, 255, 0.7);
-    }
-  }
-
-  .conv-info {
-    flex: 1;
-    overflow: hidden;
-  }
-
-  .conv-title {
-    font-size: $font-size-sm;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .conv-time {
-    font-size: 12px;
-    color: $text-light;
-    margin-top: 2px;
-  }
-
-  .delete-btn {
-    opacity: 0;
-    transition: opacity $transition-fast;
-    color: $danger-color;
-    flex-shrink: 0;
-  }
-}
-
-.empty-conversations {
-  text-align: center;
-  color: $text-light;
-  padding: $spacing-xl 0;
-  font-size: $font-size-sm;
-  .hint {
-    font-size: 12px;
-    margin-top: $spacing-xs;
-  }
-}
-
 .chat-area {
   flex: 1;
   display: flex;
@@ -278,30 +162,6 @@
   font-size: $font-size-lg;
 }
 
-.typing-wrapper {
-  display: flex;
-  justify-content: flex-start;
-  margin-bottom: $spacing-md;
-}
-
-.typing-dots {
-  background: $bg-white;
-  padding: 12px 20px;
-  border-radius: 18px;
-  display: flex;
-  gap: 4px;
-  box-shadow: $shadow-sm;
-  span {
-    width: 8px;
-    height: 8px;
-    background: $text-light;
-    border-radius: $radius-full;
-    animation: typing 1.4s infinite;
-    &:nth-child(2) { animation-delay: 0.2s; }
-    &:nth-child(3) { animation-delay: 0.4s; }
-  }
-}
-
 // 在 style 中添加或修改
 .status-message {
   display: flex;
@@ -328,12 +188,6 @@
     flex: 1;
     letter-spacing: 0.3px;
   }
-  
-  // 可选的加载进度点
-  .status-dots::after {
-    content: '';
-    animation: dots 1.5s steps(3, end) infinite;
-  }
 }
 
 // 动画
@@ -355,13 +209,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-
-@keyframes dots {
-  0% { content: ''; }
-  33% { content: '.'; }
-  66% { content: '..'; }
-  100% { content: '...'; }
 }
 
 // 不同状态的样式变体
@@ -393,11 +240,6 @@
   }
 }
 
-@keyframes typing {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-10px); opacity: 1; }
-}
-
 .input-container {
   padding: $spacing-md $spacing-lg;
   border-top: 1px solid $border-color;
@@ -413,7 +255,7 @@
     position: relative;
     background: #ffffff;
     border: 1px solid #e5e7eb;
-    border-radius: 24px;
+    border-radius: 10px;
     padding: 12px 16px;
     display: flex;
     flex-direction: column;
@@ -526,25 +368,33 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, PictureFilled, DocumentAdd, ArrowUp, Close } from '@element-plus/icons-vue'
+import { PictureFilled, DocumentAdd, ArrowUp, Close, DArrowRight, DArrowLeft } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { sendMessageStream, checkNeedTool, sendMessage as sendMessageApi } from '@/api/chat'
-import {
-  getConversations,
+import { sendMessageStream, checkNeedTool, sendMessage as sendMessageApi, getConversations,
   getConversationMessages,
-  deleteConversation as deleteConversationApi
-} from '@/api/chat'
+  deleteConversation as deleteConversationApi } from '@/api/chat'
 import ChatMessage from '@/components/ChatMessage.vue'
 import type { ChatMessage as ChatMessageType } from '@/types/chat'
 import DocumentUploader from '@/components/DocumentUploader.vue'
+import Conversation from '@/components/Conversation.vue'
 import { throttle } from '@/utils/index'
 
 const router = useRouter()
 const userStore = useUserStore()
 
+type ConversationType = typeof Conversation
+const isMobile = ref(innerWidth <= 768)
+const isConversationListOpen = ref(false)
+const conversationRef = ref<ConversationType>()
+
+const handleConversationList = (isOpen: boolean) => {
+  isConversationListOpen.value = isOpen
+  conversationRef.value?.toggleConversationList(isOpen)
+}
+
 // ===== 状态 =====
 const conversations = ref<any[]>([])
-const currentConversationId = ref<number | null>(null)
+const currentConversationId = ref<number>(0)
 const currentMessages = ref<ChatMessageType[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
@@ -560,16 +410,6 @@ const scrollToBottom = async () => {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
-}
-
-const formatTime = (time: string) => {
-  const date = new Date(time)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
-  return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
 const openDocumentUploader = () => {
@@ -675,7 +515,7 @@ const deleteConversation = async (convId: number) => {
       conversations.value.splice(idx, 1)
     }
     if (currentConversationId.value === TEMP_CONV_ID) {
-      currentConversationId.value = null
+      currentConversationId.value = 0
       currentMessages.value = []
     }
     ElMessage.info('已取消新对话')
@@ -691,7 +531,7 @@ const deleteConversation = async (convId: number) => {
     await deleteConversationApi(convId)
     ElMessage.success('对话已删除')
     if (currentConversationId.value === convId) {
-      currentConversationId.value = null
+      currentConversationId.value = 0
       currentMessages.value = []
     }
     await loadConversations()
@@ -930,9 +770,6 @@ const handleRegenerate = async (index: number) => {
 
   try {
     // 获取当前的会话 ID
-    const convId = currentConversationId.value === TEMP_CONV_ID 
-      ? null 
-      : currentConversationId.value
     const formData = new FormData()
     formData.append('message', userMsg.content || '')
     imageList.value.forEach(img => formData.append('files', img.raw))
@@ -1025,25 +862,28 @@ const handleMessagesScroll = throttle(() => {
   loadConversationMessages(convId, 10, false)
 }, 200)
 
-// ===== 生命周期 =====
-onMounted(async () => {
-  if (!userStore.token) {
-    router.push('/login')
-    return
-  }
+const handleResize = () => {
+  isMobile.value = innerWidth <= 768
+}
 
-  await loadConversations()
-
+const initConversation = async () => {
   if (conversations.value.length > 0) {
     const first = conversations.value[0]
     currentConversationId.value = first.id
     await loadConversationMessages(first.id)
   } else {
-    currentConversationId.value = null
+    currentConversationId.value = 0
     currentMessages.value = []
   }
 
   messagesContainer.value?.addEventListener('scroll', handleMessagesScroll)
+}
+
+// ===== 生命周期 =====
+onMounted(async () => {
+  window.addEventListener('resize', handleResize)
+  await loadConversations()
+  initConversation()
 })
 
 onBeforeUnmount(() => {

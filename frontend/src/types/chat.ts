@@ -27,3 +27,12 @@ export interface DocumentQueryRequest {
   question: string
   doc_id: string
 }
+
+export type Conversation = {
+  id: number
+  name: string
+  title: string
+  last_message: ChatMessage | null
+  created_at: string
+  updated_at: string
+}

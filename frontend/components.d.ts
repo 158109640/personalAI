@@ -12,7 +12,9 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ChatMessage: typeof import('./src/components/ChatMessage.vue')['default']
+    Conversation: typeof import('./src/components/Conversation.vue')['default']
     DocumentUploader: typeof import('./src/components/DocumentUploader.vue')['default']
+    ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElDrawer: typeof import('element-plus/es')['ElDrawer']
     ElEmpty: typeof import('element-plus/es')['ElEmpty']
