@@ -3,15 +3,19 @@ FROM node:22-alpine as builder
 
 WORKDIR /app
 
-# 复制 package.json 并安装依赖（使用 npm，不用 pnpm）
+# 先复制 package.json（利用 Docker 缓存）
 COPY package*.json ./
+
+# 安装依赖
 RUN npm install --registry=https://registry.npmmirror.com
 
-# 复制源码并构建
+# 再复制源码（node_modules 已被 .dockerignore 排除）
 COPY . .
+
+# 构建
 RUN npm run build
 
-# 生产阶段：使用 Nginx 托管
+# 生产阶段
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
