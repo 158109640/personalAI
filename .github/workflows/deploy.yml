@@ -1,0 +1,37 @@
+# .github/workflows/deploy.yml
+name: 自动部署到云服务器
+
+# 触发条件：当代码推送到 main 分支时
+on:
+  push:
+    branches:
+      - main
+
+# 所有 Job 的配置
+jobs:
+  deploy:
+    # 使用最新稳定版 Ubuntu 作为 runner 环境
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉取仓库最新代码
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # 2. 通过 SSH 连接服务器并执行部署命令
+      - name: 在服务器上执行部署脚本
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.SERVER_HOST }}     # 从 GitHub Secrets 读取服务器 IP
+          username: root                       # 登录用户名
+          key: ${{ secrets.SSH_PRIVATE_KEY }}  # 从 GitHub Secrets 读取私钥
+          # 连接成功后，在服务器上按顺序执行的命令
+          script: |
+            echo "🚀 开始部署..."
+            cd /root/personalAI
+            echo "📥 拉取最新代码..."
+            git pull origin main
+            echo "🔨 重新构建并启动 Docker 容器..."
+            docker compose down
+            docker compose up -d --build
+            echo "✅ 部署完成！"

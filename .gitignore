@@ -20,6 +20,8 @@ venv/
 # ChromaDB 数据（通常很大，无需提交）
 backend/chroma_db/
 
+backend/app.db
+
 # 上传文件和向量存储（运行时数据，无需提交）
 uploads/
 vector_stores/
