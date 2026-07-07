@@ -3,10 +3,9 @@ FROM node:22-alpine as builder
 
 WORKDIR /app
 
-# 复制 package.json 并安装依赖（使用国内镜像加速）
+# 复制 package.json 并安装依赖（使用 npm，不用 pnpm）
 COPY package*.json ./
-RUN npm install -g cnpm --registry=https://registry.npmmirror.com && \
-    cnpm install
+RUN npm install --registry=https://registry.npmmirror.com
 
 # 复制源码并构建
 COPY . .
