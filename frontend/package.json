@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
-    "preview": "vite preview",
+    "build": "vite build",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
+    "dev": "vite",
+    "preview": "vite preview",
     "format": "oxfmt src/"
   },
   "dependencies": {
