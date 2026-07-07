@@ -1,11 +1,13 @@
 services:
+  # ===== 后端服务 =====
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: personalai-backend
+    working_dir: /app/backend
     ports:
-      - "80:8000"
+      - "8000:8000"  # 后端 API 端口
     environment:
       - ENV=production
       - REDIS_URL=redis://redis:6379/0
@@ -19,6 +21,19 @@ services:
       - redis
     restart: unless-stopped
 
+  # ===== 前端服务 =====
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: personalai-frontend
+    ports:
+      - "80:80"  # 前端页面占 80 端口
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ===== Redis =====
   redis:
     image: redis:7-alpine
     container_name: personalai-redis
@@ -27,6 +42,7 @@ services:
     volumes:
       - redis-data:/data
     restart: unless-stopped
+    command: redis-server --appendonly yes
 
 volumes:
   redis-data:
