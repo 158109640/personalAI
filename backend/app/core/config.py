@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
   # 上传配置
   UPLOAD_DIR: str = "uploads"
-  BASE_URL: str = "http://localhost:8000"
+  BASE_URL: str = "http://121.89.90.145:8000"
   MAX_FILE_SIZE: int = 1024 * 1024 * 10  # 10MB
   
   # 数据库配置
