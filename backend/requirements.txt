@@ -164,3 +164,4 @@ h11==0.16.0
 httptools==0.8.0
 uvloop==0.22.1
 greenlet==3.5.3
+argon2_cffi>=23.1.0
