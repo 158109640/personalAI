@@ -1,31 +1,40 @@
-version: '3.8'
-
 services:
+  # 后端服务
   backend:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: personalai-backend
     ports:
-      - "8000:8000"
+      - "80:8000"  # 宿主机80端口 → 容器8000端口
     environment:
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL}
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - TAVILY_API_KEY=${TAVILY_API_KEY}
-      - AMAP_KEY=${AMAP_KEY}
-      - RAG_API_KEY=${RAG_API_KEY}
+      - ENV=production
       - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env.production
     volumes:
-      - ./backend/uploads:/app/backend/uploads
-      - ./backend/vector_stores:/app/backend/vector_stores
-      - ./backend/app.db:/app/backend/app.db
+      - ./uploads:/app/backend/uploads
+      - ./vector_stores:/app/backend/vector_stores
+      - ./chroma_db:/app/backend/chroma_db
     depends_on:
       - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
+  # Redis 缓存
   redis:
     image: redis:7-alpine
+    container_name: personalai-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # 只允许本机访问
     volumes:
-      - redis_data:/data
+      - redis-data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
 
 volumes:
-  redis_data:
+  redis-data:
