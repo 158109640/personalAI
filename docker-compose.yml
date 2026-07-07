@@ -1,12 +1,11 @@
 services:
-  # 后端服务
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: personalai-backend
     ports:
-      - "80:8000"  # 宿主机80端口 → 容器8000端口
+      - "80:8000"
     environment:
       - ENV=production
       - REDIS_URL=redis://redis:6379/0
@@ -19,22 +18,15 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
-  # Redis 缓存
   redis:
     image: redis:7-alpine
     container_name: personalai-redis
     ports:
-      - "127.0.0.1:6379:6379"  # 只允许本机访问
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     restart: unless-stopped
-    command: redis-server --appendonly yes
 
 volumes:
   redis-data:
