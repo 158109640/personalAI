@@ -8,7 +8,7 @@
       <header class="chat-header">
         <div class="header-left">
           <el-icon class="header-icon pointer" v-if="isMobile" @click="handleConversationList(true)"><DArrowRight /></el-icon>
-          <h1>🤖 AI 研发助理</h1>
+          <h1>🤖 AI 研发助理123</h1>
           <span class="user-info">👤 {{ userStore.userInfo?.username }}</span>
         </div>
         <div class="header-right">
