@@ -108,7 +108,7 @@ ormsgpack==1.12.2
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 referencing==0.37.0
-rpds-py==0.30.3
+rpds-py==0.30.0
 pybase64==1.4.3
 uuid_utils==0.16.2
 xxhash==3.8.1
