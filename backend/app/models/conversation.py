@@ -20,6 +20,7 @@ class Message(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     role = Column(String(20), nullable=False)  # user / assistant
+    type = Column(String(20), nullable=False)  # text / audio   
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

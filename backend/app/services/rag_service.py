@@ -191,20 +191,20 @@ class RAGService:
         
         prompt = f"""请根据用户问题，判断下面哪些文档可能与问题相关。
 
-    {docs_text}
+        {docs_text}
 
-    用户问题：{query}
+        用户问题：{query}
 
-    判断规则：
-    1. 如果用户问题与所有文档的内容都无关，只返回 "无"
-    2. 如果用户问题与某个文档相关，返回该文档的 ID
-    3. 如果多个文档相关，返回最多 2 个文档 ID，用逗号分隔
-    4. 只返回文档 ID 或 "无"，不要有其他内容
+        判断规则：
+        1. 如果用户问题与所有文档的内容都无关，只返回 "无"
+        2. 如果用户问题与某个文档相关，返回该文档的 ID
+        3. 如果多个文档相关，返回最多 2 个文档 ID，用逗号分隔
+        4. 只返回文档 ID 或 "无"，不要有其他内容
 
-    示例：
-    - 用户问"赵霞是谁"，文档中有赵霞的信息 → 返回文档 ID
-    - 用户问"今天天气怎么样"，所有文档都没有相关内容 → 返回"无"
-    """
+        示例：
+        - 用户问"赵霞是谁"，文档中有赵霞的信息 → 返回文档 ID
+        - 用户问"今天天气怎么样"，所有文档都没有相关内容 → 返回"无"
+        """
         
         from app.services.agent_service import agent_service
         response = await agent_service.chat([{"role": "user", "content": prompt}])
@@ -217,13 +217,12 @@ class RAGService:
             return []
         
         selected_ids = []
-        for part in response.replace("，", ",").split(","):
-            part = part.strip()
-            part = part.replace("'", "").replace('"', "").strip()
+        # 先按空格分割，再清理每个部分
+        for part in response.split():
+            part = part.strip().replace(" ", "").replace("，", "").strip()
             if part in doc_ids:
                 selected_ids.append(part)
         
-        print(f"📊 [路由] 选中的文档: {selected_ids}")
         return selected_ids[:2]
 
     async def search_all_documents(
@@ -235,6 +234,7 @@ class RAGService:
     ) -> List[Dict[str, Any]]:
         """使用大模型路由 + 混合检索"""
         doc_filenames = {}
+        print(f"📊 开始检索文档: {doc_ids}")
         for doc_id in doc_ids:
             collection_name = f"doc_{doc_id}"
             try:

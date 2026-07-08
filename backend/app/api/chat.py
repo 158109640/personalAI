@@ -106,7 +106,7 @@ async def chat(
         db, current_user, conversation_id
     )
     
-    # 2. 保存用户消息
+    # 2. 保存文件消息
     processed_files = []
     if files:
         for file in files:

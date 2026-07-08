@@ -18,3 +18,10 @@ export const formatTime = (time: string) => {
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
+
+export const calculateTime = (seconds: number) => {
+  const s = Math.floor(seconds)
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}

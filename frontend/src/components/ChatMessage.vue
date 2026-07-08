@@ -33,7 +33,7 @@
         </span>
         <div class="message-actions">
           <!-- 复制按钮（所有消息都有） -->
-          <button class="action-btn" @click="handleCopy" :title="copySuccess ? '✅ 已复制' : '📋 复制'">
+          <button v-if="type === 'text'" class="action-btn" @click="handleCopy" :title="copySuccess ? '✅ 已复制' : '📋 复制'">
             {{ copySuccess ? '✅' : '📋' }}
           </button>
           <!-- 重新生成按钮（仅 assistant 消息） -->
@@ -274,6 +274,7 @@ import type { Attachment } from '@/types/chat'
 const props = defineProps<{
   role: 'user' | 'assistant'
   content: string
+  type: string
   attachments?: Attachment[]
   created_at?: number
   index?: number
@@ -353,8 +354,11 @@ marked.use({
   }
 })
 
+const baseUrl = import.meta.env.VITE_API_BASE_URL
 const renderedContent = computed(() => {
   if (!props.content) return ''
+  const audio_url = props.content.startsWith('blob:http') ? props.content : baseUrl + props.content
+  if (props.type === 'audio') return `<audio src="${audio_url}" controls></audio>`
   return marked.parse(props.content) as string
 })
 

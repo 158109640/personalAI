@@ -79,6 +79,7 @@ class ConversationService:
                     "id": msg.id,
                     "role": msg.role,
                     "content": msg.content,
+                    "type": msg.type,
                     "attachments": [
                         {
                             "file_url": att.file_url,
@@ -100,14 +101,16 @@ class ConversationService:
         conversation_id: int,
         role: str,
         content: str,
-        files: Optional[List[Dict[str, str]]] = None
+        files: Optional[List[Dict[str, str]]] = None,
+        type: str = "text"
     ) -> Message:
         """添加消息到会话"""
         # 先创建并保存消息（不带 attachments，避免关系赋值错误）
         msg = Message(
             conversation_id=conversation_id,
             role=role,
-            content=content
+            content=content,
+            type=type
         )
         db.add(msg)
         await db.commit()

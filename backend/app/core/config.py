@@ -48,6 +48,11 @@ class Settings(BaseSettings):
   # Redis 配置（新增）
   redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+  # 语音识别 API 配置
+  voice_api_key: str = os.getenv("VOICE_API_KEY", "")
+  voice_api_id: str = os.getenv("VOICE_API_ID", "")
+  voice_secret_key: str = os.getenv("VOICE_SECRET_KEY", "")
+
   class Config:
     env_file = ".env"
     env_file_encoding = "utf-8"

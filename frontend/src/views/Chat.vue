@@ -8,7 +8,7 @@
       <header class="chat-header">
         <div class="header-left">
           <el-icon class="header-icon pointer" v-if="isMobile" @click="handleConversationList(true)"><DArrowRight /></el-icon>
-          <h1>🤖 AI 研发助理123</h1>
+          <h1>🤖 AI 研发助理</h1>
           <span class="user-info">👤 {{ userStore.userInfo?.username }}</span>
         </div>
         <div class="header-right">
@@ -30,6 +30,7 @@
             <ChatMessage
               v-else
               :role="msg.role"
+              :type="msg.type"
               :content="msg.content"
               :attachments="msg.attachments"
               :created_at="msg.created_at ?? undefined"
@@ -80,6 +81,16 @@
                   <el-icon><DocumentAdd /></el-icon>
                 </el-tooltip>
               </div>
+              <VoiceButton
+                :disabled="isLoading"
+                :conversationId="currentConversationId"
+                @pushMessage="pushMessage"
+                @statusUpdate="handleStatusUpdate"
+                @contentUpdate="handleContentUpdate"
+                @streamComplete="handleStreamComplete"
+                @recognized="handleVoiceRecognized"
+                @error="handleVoiceError"
+              />
               <!-- 发送按钮 -->
               <el-button
                 type="primary"
@@ -162,7 +173,6 @@
   font-size: $font-size-lg;
 }
 
-// 在 style 中添加或修改
 .status-message {
   display: flex;
   align-items: center;
@@ -190,7 +200,6 @@
   }
 }
 
-// 动画
 @keyframes statusPulse {
   0%, 100% {
     opacity: 1;
@@ -211,7 +220,6 @@
   }
 }
 
-// 不同状态的样式变体
 .status-message {
   &.status-thinking {
     background: linear-gradient(135deg, #f0f7ff 0%, #e8f4fd 100%);
@@ -368,7 +376,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { PictureFilled, DocumentAdd, ArrowUp, Close, DArrowRight, DArrowLeft } from '@element-plus/icons-vue'
+import { PictureFilled, DocumentAdd, ArrowUp, Close, DArrowRight } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { sendMessageStream, checkNeedTool, sendMessage as sendMessageApi, getConversations,
   getConversationMessages,
@@ -378,6 +386,7 @@ import type { ChatMessage as ChatMessageType } from '@/types/chat'
 import DocumentUploader from '@/components/DocumentUploader.vue'
 import Conversation from '@/components/Conversation.vue'
 import { throttle } from '@/utils/index'
+import VoiceButton from '@/components/VoiceButton.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -403,6 +412,10 @@ const showDocUploader = ref(false)
 
 // 临时会话 ID（固定使用 -1）
 const TEMP_CONV_ID = -1
+
+// ===== 语音相关状态 =====
+const voiceAssistantIndex = ref<number>(-1)
+const voiceFullReply = ref<string>('')
 
 // ===== 方法 =====
 const scrollToBottom = async () => {
@@ -460,7 +473,6 @@ const loadConversationMessages = async (convId: number, limit: number = 10, toBo
       currentMessages.value.unshift(...newMessages)
       await nextTick()
       if (container) {
-        // 保持当前阅读位置，避免加载后仍停在顶部而连续触发
         container.scrollTop = container.scrollHeight - prevScrollHeight
       }
     }
@@ -481,10 +493,8 @@ const switchConversation = (convId: number) => {
 }
 
 const createNewConversation = async () => {
-  // 检查是否已有临时会话
   const existingTemp = conversations.value.find(c => c.id === TEMP_CONV_ID)
   if (existingTemp) {
-    // 如果已有临时会话，直接切换到它
     currentConversationId.value = TEMP_CONV_ID
     currentMessages.value = []
     inputMessage.value = ''
@@ -492,7 +502,6 @@ const createNewConversation = async () => {
     return
   }
 
-  // 创建临时会话
   const tempConv = {
     id: TEMP_CONV_ID,
     title: '新对话',
@@ -508,7 +517,6 @@ const createNewConversation = async () => {
 }
 
 const deleteConversation = async (convId: number) => {
-  // 如果是临时会话，直接删除
   if (convId === TEMP_CONV_ID) {
     const idx = conversations.value.findIndex(c => c.id === TEMP_CONV_ID)
     if (idx !== -1) {
@@ -544,7 +552,6 @@ const deleteConversation = async (convId: number) => {
 
 // 图片相关
 const imageList = ref<any[]>([])
-// 图片处理
 const handleImageSelect = (file: any) => {
   if (imageList.value.length >= 5) {
     ElMessage.warning('最多上传5张图片')
@@ -565,7 +572,6 @@ const handleImageRemove = (_idx: number) => {
   // 由 removeImage 处理
 }
 
-// removeImage 处理
 const removeImage = (idx: number) => {
   imageList.value.splice(idx, 1)
 }
@@ -575,18 +581,15 @@ const sendMessage = async () => {
   const msg = inputMessage.value.trim()
   if (!msg || isLoading.value) return
 
-  // ===== 如果没有会话或当前是临时会话，创建新会话 =====
   let conversationId = currentConversationId.value
   
   if (conversationId === null || conversationId === TEMP_CONV_ID) {
-    // 如果当前是临时会话，先更新标题
     if (conversationId === TEMP_CONV_ID) {
       const tempConv = conversations.value.find(c => c.id === TEMP_CONV_ID)
       if (tempConv) {
         tempConv.title = msg.slice(0, 30) + (msg.length > 30 ? '...' : '')
       }
     } else {
-      // 没有会话，创建临时会话
       const tempConv = {
         id: TEMP_CONV_ID,
         title: msg.slice(0, 30) + (msg.length > 30 ? '...' : ''),
@@ -600,7 +603,6 @@ const sendMessage = async () => {
     conversationId = TEMP_CONV_ID
   }
 
-  // 先构建 formData（使用当前的图片）
   const formData = new FormData()
   formData.append('message', msg || '')
   imageList.value.forEach(img => formData.append('files', img.raw))
@@ -614,15 +616,14 @@ const sendMessage = async () => {
     file_type: img.raw?.type || 'image/jpeg',
   }))
 
-  // 添加用户消息
   currentMessages.value.push({
     role: 'user',
     content: msg,
+    type: 'text',
     created_at: Date.now(),
     attachments: attachments.length > 0 ? attachments : undefined,
   })
   inputMessage.value = ''
-  // 清空图片列表
   imageList.value = []
   await scrollToBottom()
 
@@ -630,22 +631,20 @@ const sendMessage = async () => {
   currentMessages.value.push({
     role: 'assistant',
     content: '',
+    type: 'text',
     created_at: Date.now(),
     status: '⏳ 发送问题中...'
   })
   isLoading.value = true
 
   try {
-    // 调用 need-tool 接口判断
     const needToolRes = await checkNeedTool(formData)
     const needTool = needToolRes.data.need_tool
 
     if (needTool) {
-      // ===== 需要工具：普通接口 =====
       const res = await sendMessageApi(formData)
       const newConvId = res.data.conversation_id
 
-      // 更新会话 ID（从临时 ID 变为真实 ID）
       if (conversationId === TEMP_CONV_ID) {
         const idx = conversations.value.findIndex(c => c.id === TEMP_CONV_ID)
         if (idx !== -1) {
@@ -660,16 +659,13 @@ const sendMessage = async () => {
       const updatedMessage = {
         ...currentMessages.value[assistantIndex],
         content: res.data.response,
-        status: '' // 清除状态
+        status: ''
       }
       currentMessages.value.splice(assistantIndex, 1, updatedMessage)
       isLoading.value = false
       await loadConversations()
       await scrollToBottom()
     } else {
-      // ===== 不需要工具：流式接口 =====
-      // 在 sendMessage 函数中的流式处理部分
-      // 在 sendMessage 中的流式处理
       sendMessageStream(
         formData,
         (chunk) => {
@@ -679,10 +675,8 @@ const sendMessage = async () => {
             const data = JSON.parse(chunk)
             console.log('📊 解析数据:', data)
             
-            // 根据 type 处理不同类型的数据
             if (data.type === 'conversation_id') {
               console.log('🆔 更新会话 ID:', data.conversation_id)
-              // 更新会话 ID（从临时 ID 变为真实 ID）
               if (conversationId === TEMP_CONV_ID) {
                 const idx = conversations.value.findIndex(c => c.id === TEMP_CONV_ID)
                 if (idx !== -1) {
@@ -706,12 +700,9 @@ const sendMessage = async () => {
               const updatedMsg = {
                 ...currentMsg,
                 content: currentMsg.content + data.content,
-                status: '' // 清除状态
+                status: ''
               }
-              // 使用 splice 替换，强制触发响应式更新
               currentMessages.value.splice(assistantIndex, 1, updatedMsg)
-              
-              // 滚动到底部
               
               requestAnimationFrame(() => {
                 scrollToBottom()
@@ -725,7 +716,6 @@ const sendMessage = async () => {
           console.log('✅ 流式完成')
           isLoading.value = false
           
-          // 清除状态
           if (currentMessages.value[assistantIndex]) {
             currentMessages.value[assistantIndex].status = ''
           }
@@ -751,25 +741,102 @@ const sendMessage = async () => {
   await scrollToBottom()
 }
 
+// ===== 语音相关处理函数 =====
+const pushMessage = (data: { role: 'user' | 'assistant', type: 'audio' | 'text', content: string, status: string }) => {
+  currentMessages.value.push({
+    role: data.role,
+    type: data.type,
+    content: data.content,
+    status: data.status || '',
+    created_at: Date.now()
+  })
+  if (data.role === 'assistant') {
+    voiceAssistantIndex.value = currentMessages.value.length - 1
+  }
+  scrollToBottom()
+}
+
+const handleStatusUpdate = (status: string) => {
+  if (voiceAssistantIndex.value === -1) {
+    currentMessages.value.push({
+      role: 'assistant',
+      type: 'text',
+      content: '',
+      status: status,
+      created_at: Date.now()
+    })
+    voiceAssistantIndex.value = currentMessages.value.length - 1
+  } else {
+    const msg = currentMessages.value[voiceAssistantIndex.value]
+    if (msg) {
+      msg.status = status
+    }
+  }
+  scrollToBottom()
+}
+
+const handleContentUpdate = (content: string) => {
+  voiceFullReply.value = content
+  
+  if (voiceAssistantIndex.value === -1) {
+    currentMessages.value.push({
+      role: 'assistant',
+      type: 'text',
+      content: content,
+      status: '',
+      created_at: Date.now()
+    })
+    voiceAssistantIndex.value = currentMessages.value.length - 1
+  } else {
+    const msg = currentMessages.value[voiceAssistantIndex.value]
+    if (msg) {
+      msg.content = content
+      msg.status = ''
+    }
+  }
+  scrollToBottom()
+}
+
+const handleStreamComplete = (content: string) => {
+  voiceFullReply.value = content
+  
+  if (voiceAssistantIndex.value !== -1) {
+    const msg = currentMessages.value[voiceAssistantIndex.value]
+    if (msg) {
+      msg.content = content
+      msg.status = ''
+    }
+  }
+  voiceAssistantIndex.value = -1
+  scrollToBottom()
+}
+
+const handleVoiceRecognized = async (_data: { reply_text: string }) => {
+  if (voiceFullReply.value) return
+  await scrollToBottom()
+}
+
+const handleVoiceError = (error: string) => {
+  ElMessage.error(error)
+  voiceAssistantIndex.value = -1
+  voiceFullReply.value = ''
+}
+
 // ===== 重新生成 =====
 const handleRegenerate = async (index: number) => {
-  // 找到对应的 assistant 消息
   const assistantMsg = currentMessages.value[index]
   if (!assistantMsg || assistantMsg.role !== 'assistant') return
 
-  // 获取上一条用户消息（索引减1）
   const userMsg = currentMessages.value[index - 1]
   if (!userMsg || userMsg.role !== 'user') {
     ElMessage.warning('未找到对应的用户消息')
     return
   }
 
-  // 设置加载状态
   assistantMsg.content = ''
   assistantMsg.status = '🔄 重新生成中...'
 
   try {
-    // 获取当前的会话 ID
     const formData = new FormData()
     formData.append('message', userMsg.content || '')
     imageList.value.forEach(img => formData.append('files', img.raw))
@@ -777,18 +844,15 @@ const handleRegenerate = async (index: number) => {
       formData.append('conversation_id', String(currentConversationId.value))
     }
     
-    // 调用 need-tool 判断
     const needToolRes = await checkNeedTool(formData)
     const needTool = needToolRes.data.need_tool
 
     if (needTool) {
-      // 普通接口
       const res = await sendMessageApi(formData)
       assistantMsg.content = res.data.response
       assistantMsg.status = ''
       ElMessage.success('重新生成成功')
     } else {
-      // 流式接口
       let fullContent = ''
       assistantMsg.status = '🔄 重新生成中...'
 

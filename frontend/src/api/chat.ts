@@ -1,11 +1,6 @@
-import request from '@/utils/request'
-import type { ChatResponse } from '@/types/chat'
+import request, { streamRequest } from '@/utils/request'
+import type { ChatResponse, NeedToolResponse } from '@/types/chat'
 import { useUserStore } from '@/stores/user'
-
-export interface NeedToolResponse {
-  need_tool: boolean
-  use_rag: boolean
-}
 
 export const sendMessage = (formData: FormData) => {
   return request.post<ChatResponse>('/chat', formData)
@@ -86,6 +81,29 @@ export const sendMessageStream = (
 
 export const checkNeedTool = (formData: FormData) => {
   return request.post<NeedToolResponse>('/chat/need-tool', formData)
+}
+
+export const sendVoiceMessage = (formData: FormData) => {
+  return request.post<string>('/voice/voice-to-text', formData)
+}
+
+// ===== 新增：流式请求 =====
+export const sendVoiceMessageStream = (
+  formData: FormData,
+  onMessage: (data: any) => void,
+  onError?: (error: any) => void,
+  onComplete?: () => void
+) => {
+  return streamRequest('/voice/voice-to-text', {
+    method: 'POST',
+    data: formData,
+    headers: {
+      // Content-Type 让浏览器自动设置（FormData 边界）
+    },
+    onMessage,
+    onError,
+    onComplete,
+  })
 }
 
 // 会话管理

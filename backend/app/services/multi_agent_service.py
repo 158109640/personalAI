@@ -1,11 +1,9 @@
 from typing import TypedDict, List, Dict
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from app.core.config import settings
 from app.tools import search_web, get_weather, send_email
-import json
-import re
 from app.services.rag_service import rag_service
 from app.models.document import Document
 from app.core.database import get_db
@@ -221,8 +219,6 @@ async def rag_researcher(state: AgentState) -> AgentState:
     state["current_status"] = "📚 检索文档中..."
     state['research_result'] = "未找到相关文档"
     return state   
-
-# app/services/multi_agent_service.py
 
 async def stream_multi_agent(
     query: str,

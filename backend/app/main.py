@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, documents, auth # 👈 导入 chat 路由
+from app.api import chat, documents, auth, voice # 👈 导入 chat 路由
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -13,7 +13,7 @@ app = FastAPI(
 # 配置 CORS
 app.add_middleware(
   CORSMiddleware,
-  allow_origins=["http://localhost:5173"],  # Vue 默认端口
+  allow_origins=["http://localhost:5174"],  # Vue 默认端口
   allow_credentials=True,
   allow_methods=["*"],
   allow_headers=["*"],
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
+app.include_router(voice.router)
 
 # ✅ 确保 uploads 目录存在
 os.makedirs("uploads", exist_ok=True)

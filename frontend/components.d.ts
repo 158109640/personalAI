@@ -35,5 +35,6 @@ declare module 'vue' {
     IconTooling: typeof import('./src/components/icons/IconTooling.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    VoiceButton: typeof import('./src/components/VoiceButton.vue')['default']
   }
 }
