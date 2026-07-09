@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制后端 requirements.txt 到容器内的 /app/backend/
