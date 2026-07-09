@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     g++ \
     curl \
     ffmpeg \
+    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制后端 requirements.txt 到容器内的 /app/backend/
