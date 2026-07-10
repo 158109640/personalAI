@@ -128,7 +128,6 @@ async def voice_to_text(
         messages_data = await conversation_service.get_conversation_messages(
             db, conversation.id, limit=10, offset=0
         )
-        history_messages = messages_data.get("data", []) if isinstance(messages_data, dict) else []
         
         audio_size = os.path.getsize(saved_audio_path)
         
@@ -138,7 +137,7 @@ async def voice_to_text(
             
             # 1. 先发送语音信息
             yield json.dumps({
-                "type": "voice_info",
+                "type": "audio",
                 "recognized_text": recognized_text,
                 "audio_url": audio_url,
                 "audio_size": audio_size
@@ -146,6 +145,7 @@ async def voice_to_text(
             
             # 2. 调用多 Agent
             full_reply = ""
+            type = ""
             async for chunk in stream_multi_agent(
                 query=recognized_text,
                 messages=messages_data,
@@ -156,29 +156,40 @@ async def voice_to_text(
                     yield json.dumps(chunk, ensure_ascii=False) + "\n"
                     if chunk.get("type") == "content":
                         full_reply += chunk.get("content", "")
+                        type = "content"
+                    elif chunk.get("type") == "audio":
+                        full_reply += chunk.get("content", "")
+                        type = "audio"
+    
                 elif isinstance(chunk, str):
                     try:
                         data = json.loads(chunk)
                         yield json.dumps(data, ensure_ascii=False) + "\n"
                         if data.get("type") == "content":
                             full_reply += data.get("content", "")
+                            type = "content"
+                        elif data.get("type") == "audio":
+                            full_reply += data.get("content", "")
+                            type = "audio"
                     except json.JSONDecodeError:
                         yield json.dumps({
                             "type": "content",
                             "content": chunk
                         }, ensure_ascii=False) + "\n"
                         full_reply += chunk
+                        type = "content"
                 else:
                     yield json.dumps({
                         "type": "content",
                         "content": str(chunk)
                     }, ensure_ascii=False) + "\n"
                     full_reply += str(chunk)
+                    type = "content"
             
             # 3. 保存 AI 回复到数据库
             if full_reply:
                 await conversation_service.add_message(
-                    db, conversation.id, "assistant", full_reply, [], "text"
+                    db, conversation.id, "assistant", full_reply, [], type
                 )
             
             # 4. 发送完成信号

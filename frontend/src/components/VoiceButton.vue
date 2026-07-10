@@ -154,13 +154,13 @@ import { sendVoiceMessageStream } from '@/api/chat' // 新增：流式API
 import type { VoiceResponse } from '@/types/chat'
 
 const emit = defineEmits<{
-  (e: 'recognized', data: { audio_url: string, reply_text: string }): void
+  (e: 'recognized', data: { audio_url: string, reply_text: string, type: 'audio' | 'done' }): void
   (e: 'pushMessage', data: { role: 'user' | 'assistant', type: 'audio' | 'text', content: string, status: string }): void
   (e: 'error', error: string): void
   // 新增：流式状态更新
   (e: 'statusUpdate', status: string): void
   // 新增：流式内容更新
-  (e: 'contentUpdate', content: string): void
+  (e: 'contentUpdate', content: string, type: 'audio' | 'content' | 'done'): void
   // 新增：流式完成
   (e: 'streamComplete', fullReply: string): void
 }>()
@@ -288,52 +288,41 @@ const sendAudio = async () => {
     formData.append('conversation_id', props.conversationId.toString())
 
     // ===== 🔥 使用流式 API =====
-    let recognizedText = ''
     let fullReply = ''
     let audioUrlResponse = ''
-    let hasReceivedVoiceInfo = false
 
     await sendVoiceMessageStream(
       formData,
       (data: VoiceResponse) => {
-        console.log('📨 收到流式数据:', data)
-
         // 类型断言，确保TypeScript识别VoiceResponse的type属性
         const streamData = data as { type: string } & VoiceResponse;
+        console.log('收到数据:', streamData)
         switch (streamData.type) {
-          case 'voice_info':
+          case 'audio':
             // 语音识别结果
-            recognizedText = data.recognized_text || ''
-            audioUrlResponse = data.audio_url || ''
-            hasReceivedVoiceInfo = true
-            console.log('🎤 识别文字:', recognizedText)
+            audioUrlResponse = data.content || ''
             
             // 保持向后兼容：触发 recognized 事件
             emit('recognized', {
               audio_url: audioUrlResponse,
-              reply_text: '' // 流式模式下，reply_text 会通过 content 逐步返回
+              reply_text: '', // 流式模式下，reply_text 会通过 content 逐步返回
+              type: 'audio'
             })
             break
 
           case 'status':
             // 状态更新
-            console.log('📌 状态:', data.content)
             emit('statusUpdate', data.content)
             break
 
           case 'content':
             // AI 回复内容（逐字累积）
             fullReply += data.content
-            console.log('✍️ 累积回复:', fullReply)
             // 实时通知父组件内容更新
-            emit('contentUpdate', fullReply)
+            emit('contentUpdate', fullReply, 'content')
             break
 
           case 'done':
-            // 完成
-            console.log('✅ 流式完成')
-            console.log('📝 完整回复:', fullReply)
-            
             // 触发完成事件
             emit('streamComplete', fullReply)
             
@@ -341,20 +330,21 @@ const sendAudio = async () => {
             if (fullReply) {
               emit('recognized', {
                 audio_url: audioUrlResponse,
-                reply_text: fullReply
+                reply_text: fullReply,
+                type: 'done'
               })
             }
             break
 
           default:
-            console.log('未知类型:', data)
             // 尝试兼容旧格式
             if (data.success !== undefined) {
               // 旧格式响应
               if (data.success) {
                 emit('recognized', {
                   audio_url: data.audio_url,
-                  reply_text: data.reply_text
+                  reply_text: data.reply_text,
+                  type: 'done'
                 })
               } else {
                 throw new Error(data.err_msg || '识别失败')
@@ -370,7 +360,6 @@ const sendAudio = async () => {
         isProcessing.value = false
       },
       () => {
-        console.log('🔚 流式结束')
         isProcessing.value = false
         audioChunks = []
       }

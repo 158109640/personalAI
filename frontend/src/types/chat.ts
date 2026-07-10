@@ -26,6 +26,7 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   response: string
+  type: 'text' | 'audio'
   conversation_id: number
 }
 

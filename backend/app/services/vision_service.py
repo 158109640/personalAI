@@ -34,7 +34,6 @@ async def multimodal_chat(
     # 2. 构建消息
     messages = []
     
-    print(history, '这是历史啊')
     # 添加历史对话
     if history:
         for msg in history.get('data', [])[-5:]:

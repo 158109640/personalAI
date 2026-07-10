@@ -152,21 +152,24 @@ async def chat(
         "research_result": "",
         "final_answer": "",
         "next_step": "",
-        "user_id": current_user.id
+        "user_id": current_user.id,
+        "reply_type": "",
+        "audio_url": ""
     })
     
-    answer = result["final_answer"]
+    type = result["reply_type"]
+    answer = result["final_answer"] if type == "text" else result["audio_url"]
     
     # 4. 保存 AI 回复
-    await conversation_service.add_message(db, conv.id, "assistant", answer, processed_files)
+    await conversation_service.add_message(db, conv.id, "assistant", answer, processed_files, type)
     
     # 5. 更新标题（如果是新对话）
     msg_count = len(await conversation_service.get_conversation_messages(db, conv.id))
     if msg_count <= 2:
         title = message[:50] + ("..." if len(message) > 50 else "")
         await conversation_service.update_conversation_title(db, conv.id, title)
-    
-    return ChatResponse(response=answer, conversation_id=conv.id, status="✅ 回答完成", type="content")
+
+    return ChatResponse(response=answer, conversation_id=conv.id, status="✅ 回答完成", type=type)
 
 # ========== 流式对话接口 ==========
 @router.post("/stream")
@@ -242,6 +245,7 @@ async def chat_stream(
             yield f"data: {json.dumps({'done': True})}\n\n"
         else:
             # 使用真正的流式函数
+            reply_type = 'text'
             async for chunk in stream_multi_agent(
                 query=message,
                 messages=history,
@@ -249,12 +253,17 @@ async def chat_stream(
             ):
                 if chunk["type"] == "status":
                     yield f"data: {json.dumps({'type': 'status', 'content': chunk['content']})}\n\n"
+                elif chunk["type"] == "reply_type":
+                    reply_type = chunk["content"]
+                elif chunk["type"] == "audio":
+                    full_answer += chunk["content"]
+                    yield f"data: {json.dumps({'type': 'audio', 'content': chunk['content']})}\n\n"
                 elif chunk["type"] == "content":
                     full_answer += chunk["content"]
                     yield f"data: {json.dumps({'type': 'content', 'content': chunk['content'], 'done': False})}\n\n"
                 elif chunk["type"] == "done":
                     # 保存 AI 回复
-                    await conversation_service.add_message(db, conv.id, "assistant", full_answer, processed_files)
+                    await conversation_service.add_message(db, conv.id, "assistant", full_answer, processed_files, reply_type)
                     
                     # 更新标题
                     msg_count = len(await conversation_service.get_conversation_messages(db, conv.id))

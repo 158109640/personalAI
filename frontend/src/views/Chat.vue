@@ -255,8 +255,6 @@
 
   .input-wrapper {
     width: 100%;
-    max-width: 1000px;
-    margin: 0 auto;
   }
 
   .input-box {
@@ -658,6 +656,7 @@ const sendMessage = async () => {
 
       const updatedMessage = {
         ...currentMessages.value[assistantIndex],
+        type: res.data.type,
         content: res.data.response,
         status: ''
       }
@@ -693,12 +692,13 @@ const sendMessage = async () => {
                 status: data.content
               }
               currentMessages.value.splice(assistantIndex, 1, updatedMsg)
-            } else if (data.type === 'content') {
+            } else if (data.type === 'content' || data.type === 'audio') {
               console.log('✍️ 内容片段:', data.content)
               
               const currentMsg = currentMessages.value[assistantIndex]
               const updatedMsg = {
                 ...currentMsg,
+                type: data.type,
                 content: currentMsg.content + data.content,
                 status: ''
               }
@@ -775,13 +775,12 @@ const handleStatusUpdate = (status: string) => {
   scrollToBottom()
 }
 
-const handleContentUpdate = (content: string) => {
+const handleContentUpdate = (content: string, type: 'audio' | 'content' | 'done') => {
   voiceFullReply.value = content
-  
   if (voiceAssistantIndex.value === -1) {
     currentMessages.value.push({
       role: 'assistant',
-      type: 'text',
+      type: type === 'done' || type === 'content' ? 'text' : type,
       content: content,
       status: '',
       created_at: Date.now()
@@ -789,18 +788,25 @@ const handleContentUpdate = (content: string) => {
     voiceAssistantIndex.value = currentMessages.value.length - 1
   } else {
     const msg = currentMessages.value[voiceAssistantIndex.value]
-    if (msg) {
-      msg.content = content
-      msg.status = ''
-    }
-  }
+    console.log(content, 'hello lucy')
+    nextTick(() => {
+      if (msg) {
+        msg.type = type === 'done' || type === 'content' ? 'text' : type
+        msg.content = content
+        msg.status = ''
+      }
+    })
+    
+    console.log(msg, 'hello world')
+   }
   scrollToBottom()
 }
 
 const handleStreamComplete = (content: string) => {
   voiceFullReply.value = content
-  
+  console.log('✅ hello:', content)
   if (voiceAssistantIndex.value !== -1) {
+    console.log('到这里了')
     const msg = currentMessages.value[voiceAssistantIndex.value]
     if (msg) {
       msg.content = content
@@ -811,8 +817,11 @@ const handleStreamComplete = (content: string) => {
   scrollToBottom()
 }
 
-const handleVoiceRecognized = async (_data: { reply_text: string }) => {
+const handleVoiceRecognized = async (data: { reply_text: string, audio_url: string, type: 'audio' | 'done' }) => {
+  console.log('收到语音识别结果:', data)
   if (voiceFullReply.value) return
+  voiceFullReply.value = data.audio_url || ''
+  handleContentUpdate(data.audio_url || '', data.type)
   await scrollToBottom()
 }
 
