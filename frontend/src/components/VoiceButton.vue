@@ -157,6 +157,8 @@ const emit = defineEmits<{
   (e: 'recognized', data: { audio_url: string, reply_text: string, type: 'audio' | 'done' }): void
   (e: 'pushMessage', data: { role: 'user' | 'assistant', type: 'audio' | 'text', content: string, status: string }): void
   (e: 'error', error: string): void
+  // 新增：会话ID更新
+  (e: 'updateConversationId', conversationId: number): void
   // 新增：流式状态更新
   (e: 'statusUpdate', status: string): void
   // 新增：流式内容更新
@@ -295,7 +297,7 @@ const sendAudio = async () => {
       formData,
       (data: VoiceResponse) => {
         // 类型断言，确保TypeScript识别VoiceResponse的type属性
-        const streamData = data as { type: string } & VoiceResponse;
+        const streamData = data as { type: string, conversation_id?: number } & VoiceResponse;
         console.log('收到数据:', streamData)
         switch (streamData.type) {
           case 'audio':
@@ -320,6 +322,14 @@ const sendAudio = async () => {
             fullReply += data.content
             // 实时通知父组件内容更新
             emit('contentUpdate', fullReply, 'content')
+            break
+
+          case 'conversation_id':
+            // 会话ID更新
+            console.log('需要更新会话id了', streamData.conversation_id)
+            if (streamData.conversation_id) {
+              emit('updateConversationId', streamData.conversation_id)
+            }
             break
 
           case 'done':

@@ -87,6 +87,7 @@
                 @pushMessage="pushMessage"
                 @statusUpdate="handleStatusUpdate"
                 @contentUpdate="handleContentUpdate"
+                @updateConversationId="handleUpdateConversationId"
                 @streamComplete="handleStreamComplete"
                 @recognized="handleVoiceRecognized"
                 @error="handleVoiceError"
@@ -162,7 +163,7 @@
 .messages-container {
   flex: 1;
   overflow-y: auto;
-  padding: $spacing-lg;
+  padding: $spacing-md;
   background: $bg-gray;
 }
 
@@ -249,7 +250,7 @@
 }
 
 .input-container {
-  padding: $spacing-md $spacing-lg;
+  padding: $spacing-md $spacing-md;
   border-top: 1px solid $border-color;
   flex-shrink: 0;
 
@@ -635,6 +636,8 @@ const sendMessage = async () => {
   })
   isLoading.value = true
 
+  await scrollToBottom()
+
   try {
     const needToolRes = await checkNeedTool(formData)
     const needTool = needToolRes.data.need_tool
@@ -800,6 +803,12 @@ const handleContentUpdate = (content: string, type: 'audio' | 'content' | 'done'
     console.log(msg, 'hello world')
    }
   scrollToBottom()
+}
+
+const handleUpdateConversationId = (conversationId: number) => {
+  nextTick(() => {
+    currentConversationId.value = conversationId
+  })
 }
 
 const handleStreamComplete = (content: string) => {

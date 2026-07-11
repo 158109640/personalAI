@@ -76,6 +76,8 @@ async def voice_to_text(
         
         # 3. 获取或创建会话
         conversation = await conversation_service.get_or_create_conversation(db, user, conversation_id)
+
+
         
         # 保存用户语音消息
         await conversation_service.add_message(
@@ -135,6 +137,9 @@ async def voice_to_text(
         async def generate():
             """生成流式响应"""
             
+            yield f"{json.dumps({'type': 'conversation_id', 'conversation_id': conversation.id})}\n\n"
+            print(f"会话ID: {conversation.id}")
+            
             # 1. 先发送语音信息
             yield json.dumps({
                 "type": "audio",
@@ -171,6 +176,9 @@ async def voice_to_text(
                         elif data.get("type") == "audio":
                             full_reply += data.get("content", "")
                             type = "audio"
+                        elif data.get("type") == "conversation_id":
+                            print('需要更新会话了')
+                            type = "conversation_id"
                     except json.JSONDecodeError:
                         yield json.dumps({
                             "type": "content",

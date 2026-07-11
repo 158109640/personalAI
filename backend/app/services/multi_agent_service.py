@@ -45,13 +45,17 @@ def supervisor(state: AgentState) -> AgentState:
     
     async def check_docs():
         async for db in get_db():
-            stmt = select(Document).where(
-                Document.owner_id == user_id,
-                Document.status == "processed"
-            )
-            result = await db.execute(stmt)
-            docs = result.scalars().all()
-            return docs
+            try:
+                stmt = select(Document).where(
+                    Document.owner_id == user_id,
+                    Document.status == "processed"
+                )
+                result = await db.execute(stmt)
+                docs = result.scalars().all()
+                return docs
+            finally:
+                # 确保连接被释放
+                await db.close()
         return []
 
     docs = loop.run_until_complete(check_docs())
@@ -71,6 +75,10 @@ def supervisor(state: AgentState) -> AgentState:
         if chunks and chunks[0]["score"] > 0.1:
             print(f"📚 RAG 命中，直接走 need_rag")
             state["next_step"] = "need_rag"
+            # ===== 直接在这里设置 research_result =====
+            context = "\n\n".join([chunk["content"] for chunk in chunks])
+            state["research_result"] = context
+            print(f"✅ supervisor 中 research_result 已设置，长度: {len(context)}")
             state["rag_chunks"] = chunks
             return state
     
@@ -201,12 +209,20 @@ def email_agent(state: AgentState) -> AgentState:
 # ============================================================
 async def rag_researcher(state: AgentState) -> AgentState:
     print(f"📚 RAG 研究员正在检索文档: {state['query']}")
+    
+    # ===== 如果已经有 research_result，直接返回 =====
+    if state.get('research_result'):
+        print(f"✅ research_result 已存在（长度: {len(state['research_result'])}），跳过检索")
+        state["current_status"] = "📚 检索完成"
+        return state
+    
     user_id = state.get('user_id', 1)
     
     from app.models.document import Document
     from app.core.database import get_db
     from sqlalchemy import select
     
+    docs = []
     async for db in get_db():
         stmt = select(Document).where(
             Document.owner_id == user_id,
@@ -214,22 +230,59 @@ async def rag_researcher(state: AgentState) -> AgentState:
         )
         result = await db.execute(stmt)
         docs = result.scalars().all()
-        
-        if docs:
-            doc_ids = [doc.doc_id for doc in docs]
-            chunks = await rag_service.search_all_documents(
-                doc_ids=doc_ids,
-                query=state['query'],
-                top_k_per_doc=3,
-                final_top_k=3
-            )
-            if chunks:
-                context = "\n\n".join([chunk["content"] for chunk in chunks])
-                state['research_result'] = f"📄 文档检索结果：\n\n{context}"
-                return state
+        break
     
-    state["current_status"] = "📚 检索文档中..."
-    state['research_result'] = "未找到相关文档"
+    if not docs:
+        print("❌ 未找到用户文档")
+        state["current_status"] = "📚 未找到相关文档"
+        state['research_result'] = "未找到相关文档"
+        return state
+    
+    print(f"📊 找到 {len(docs)} 个文档")
+    doc_ids = [doc.doc_id for doc in docs]
+    print(f"📊 文档 ID: {doc_ids}")
+    
+    chunks = await rag_service.search_all_documents(
+        doc_ids=doc_ids,
+        query=state['query'],
+        top_k_per_doc=3,
+        final_top_k=3
+    )
+    
+    if chunks:
+        doc_summaries = {}
+        for doc_id in doc_ids:
+            try:
+                # 获取文档的第一个片段作为摘要
+                vector_store = Chroma(
+                    collection_name=f"doc_{doc_id}",
+                    embedding_function=rag_service.embeddings,
+                    persist_directory=VECTOR_STORE_DIR
+                )
+                all_docs = vector_store.get()
+                if all_docs.get("documents"):
+                    doc_summaries[doc_id] = all_docs["documents"][0]
+            except:
+                doc_summaries[doc_id] = ""
+        # 构建上下文：摘要 + 检索片段
+        context_parts = []
+        # 先添加摘要
+        for doc_id, summary in doc_summaries.items():
+            if summary:
+                context_parts.append(f"【文档摘要】{summary}")
+        
+        # 再添加检索到的片段
+        for chunk in chunks:
+            context_parts.append(chunk["content"])
+        
+        context = "\n\n".join(context_parts)
+        state['research_result'] = context        
+
+    else:
+        print("❌ 未找到相关文档片段")
+        state['research_result'] = "未找到相关文档"
+    
+    state["current_status"] = "📚 检索完成"
     return state
 
 
@@ -288,19 +341,24 @@ def answerer(state: AgentState) -> AgentState:
     根据 state['reply_type'] 生成对应格式的回复
     """
     reply_type = state.get("reply_type", "text")
-    print(f"回复类型: {reply_type}")
+    
+    # ===== 清理 research_result =====
+    research_result = state.get('research_result', '')
+    print(f"📊 原始123 research_result: {research_result}")
     
     # 7.1 生成内容（文字）
-    if state.get('research_result'):
+    if research_result and len(str(research_result)) > 10:
         prompt = f"""基于以下信息回答用户问题。
 
 信息：
-{state['research_result']}
+{research_result}
 
 用户问题：{state['query']}
 
 请基于信息给出准确、简洁的回答。"""
+        print(f"📊 使用 RAG 模式，prompt 长度: {len(prompt)}")
     else:
+        print("📊 使用直接回答模式")
         context = ""
         messages = state.get('messages', {})
         if isinstance(messages, dict):
@@ -321,21 +379,24 @@ def answerer(state: AgentState) -> AgentState:
 
 请根据对话历史理解上下文，回答用户问题。"""
     
+    print(f"📊 完整 prompt 预览:\n{prompt[:500]}...")
+    
     response = model.invoke([HumanMessage(content=prompt)])
     content = response.content
+    print(f"📊 大模型返回: {content[:200]}...")
     
     # ===== 7.2 根据回复类型处理 =====
     if reply_type == "audio":
         # 第一步：转换为口语化文本
         audio_prompt = f"""将以下回答转换为适合语音朗读的版本：
-- 口语化，自然流畅
-- 适当增加停顿和语气词
-- 去掉不适合语音的格式（如表格、列表等）
-- 保持信息完整
+        - 口语化，自然流畅
+        - 适当增加停顿和语气词
+        - 去掉不适合语音的格式（如表格、列表等）
+        - 保持信息完整
 
-原始回答：{content}
+        原始回答：{content}
 
-只返回转换后的语音文本，不要有其他内容。"""
+        只返回转换后的语音文本，不要有其他内容。"""
         
         audio_response = model.invoke([HumanMessage(content=audio_prompt)])
         voice_text = audio_response.content
@@ -348,7 +409,6 @@ def answerer(state: AgentState) -> AgentState:
                 state['audio_url'] = audio_url
                 print(f"🔊 TTS 合成成功: {audio_url}")
             else:
-                # TTS 失败，降级为文字回复
                 print("❌ TTS 合成失败，降级为文字回复")
                 state['reply_type'] = "text"
                 state['audio_url'] = None
@@ -362,6 +422,7 @@ def answerer(state: AgentState) -> AgentState:
     
     state["current_status"] = "✍️ 生成回答中..."
     return state
+
 
 # ============================================================
 # 8. 流式执行 Multi-Agent
@@ -424,7 +485,7 @@ async def stream_multi_agent(
     if reply_type == "audio" and state.get('audio_url'):
         # 语音回复：直接返回音频 URL 和文字
         yield {"type": "reply_type", "content": "audio"}
-        yield {"type": "audio", "content": state['audio_url']}  # ← 确认这行执行了
+        yield {"type": "audio", "content": state['audio_url']}
         yield {"type": "done"}
     else:
         # 文字回复：逐字输出
@@ -463,7 +524,7 @@ def build_multi_agent():
             "need_search": "searcher",
             "need_weather": "weather_agent",
             "need_email": "email_agent",
-            "direct_answer": "reply_type_decision"  # 直接进入回复类型决策
+            "direct_answer": "reply_type_decision"
         }
     )
     

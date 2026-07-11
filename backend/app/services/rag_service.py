@@ -43,7 +43,6 @@ class RAGService:
 
     def create_vector_store(self, doc_id: str, texts: List[str], filename: str) -> str:
         """创建向量存储"""
-        print(f"📤 正在创建 Chroma 向量存储，文本数量: {len(texts)}")
         
         collection_name = f"doc_{doc_id}"
         
@@ -65,7 +64,6 @@ class RAGService:
             metadatas=metadatas
         )
         
-        print(f"✅ Chroma 向量存储已保存到: {VECTOR_STORE_DIR}")
         return collection_name
 
     def _bm25_search(self, texts: List[str], query: str, top_k: int = 3) -> List[tuple]:
@@ -181,7 +179,6 @@ class RAGService:
                         filename = all_docs["metadatas"][0].get("filename", "未知")
                     doc_summaries[doc_id] = {"filename": filename, "summary": summary}
             except Exception as e:
-                print(f"⚠️ 获取文档 {doc_id} 信息失败: {e}")
                 doc_summaries[doc_id] = {"filename": "未知", "summary": ""}
         
         # 2. 构建 prompt，让大模型判断是否相关并选择文档
@@ -208,12 +205,10 @@ class RAGService:
         
         from app.services.agent_service import agent_service
         response = await agent_service.chat([{"role": "user", "content": prompt}])
-        print(f"📊 [路由] 大模型返回: {response}")
         
         # 3. 解析返回结果
         response = response.strip()
         if "无" in response:
-            print(f"📊 [路由] 判断为不相关，返回空列表")
             return []
         
         selected_ids = []
@@ -234,7 +229,6 @@ class RAGService:
     ) -> List[Dict[str, Any]]:
         """使用大模型路由 + 混合检索"""
         doc_filenames = {}
-        print(f"📊 开始检索文档: {doc_ids}")
         for doc_id in doc_ids:
             collection_name = f"doc_{doc_id}"
             try:
@@ -248,11 +242,9 @@ class RAGService:
                     filename = all_docs["metadatas"][0].get("filename", "")
                     doc_filenames[doc_id] = filename
             except Exception as e:
-                print(f"⚠️ 获取文档 {doc_id} 信息失败: {e}")
                 doc_filenames[doc_id] = "未知"
         
         target_docs = await self.route_documents(doc_ids, query)
-        print(f"📊 路由选中的文档: {target_docs}")
         
         all_results = []
         for doc_id in target_docs:
@@ -272,7 +264,6 @@ class RAGService:
         all_results.sort(key=lambda x: x["score"], reverse=True)
         final_results = all_results[:final_top_k]
         
-        print(f"📊 最终结果:")
         for i, r in enumerate(final_results):
             print(f"  {i+1}. [{r['filename']}] 分数: {r['score']:.4f} - {r['content'][:30]}...")
         
