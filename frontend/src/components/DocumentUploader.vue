@@ -132,7 +132,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Document, Delete } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { deleteDocument } from '@/api/chat'
+import { deleteDocument, listDocuments } from '@/api/chat'
 
 const props = defineProps<{
   sessionId: string | number | null
@@ -227,25 +227,15 @@ const clearAllDocuments = async () => {
 }
 
 // 加载已上传文档
-const loadDocuments = () => {
-  const saved = localStorage.getItem('uploaded_documents')
-  if (saved) {
-    try {
-      documents.value = JSON.parse(saved)
-    } catch (e) {
-      console.error('加载文档列表失败:', e)
-    }
+const loadDocuments = async () => {
+  try {
+    const res = await listDocuments()
+    console.log(res.data, 'hello lucy')
+    documents.value = res.data
+  } catch (e: any) {
+    console.error('加载文档列表失败:', e)
   }
 }
-
-// 保存到 localStorage
-const saveDocuments = () => {
-  localStorage.setItem('uploaded_documents', JSON.stringify(documents.value))
-}
-
-watch(documents, () => {
-  saveDocuments()
-}, { deep: true })
 
 onMounted(() => {
   loadDocuments()

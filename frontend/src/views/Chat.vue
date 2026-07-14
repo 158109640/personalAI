@@ -791,7 +791,6 @@ const handleContentUpdate = (content: string, type: 'audio' | 'content' | 'done'
     voiceAssistantIndex.value = currentMessages.value.length - 1
   } else {
     const msg = currentMessages.value[voiceAssistantIndex.value]
-    console.log(content, 'hello lucy')
     nextTick(() => {
       if (msg) {
         msg.type = type === 'done' || type === 'content' ? 'text' : type
@@ -808,14 +807,13 @@ const handleContentUpdate = (content: string, type: 'audio' | 'content' | 'done'
 const handleUpdateConversationId = (conversationId: number) => {
   nextTick(() => {
     currentConversationId.value = conversationId
+    loadConversations()
   })
 }
 
 const handleStreamComplete = (content: string) => {
   voiceFullReply.value = content
-  console.log('✅ hello:', content)
   if (voiceAssistantIndex.value !== -1) {
-    console.log('到这里了')
     const msg = currentMessages.value[voiceAssistantIndex.value]
     if (msg) {
       msg.content = content

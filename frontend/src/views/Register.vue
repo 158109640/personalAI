@@ -120,7 +120,7 @@
 }
 
 .auth-card {
-  width: 100%;
+  width: 80%;
   max-width: 420px;
   background: $bg-white;
   border-radius: $radius-lg;

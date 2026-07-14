@@ -119,6 +119,11 @@ export const deleteConversation = (conversationId: number) => {
   return request.delete(`/chat/conversations/${conversationId}`)
 }
 
+// 获取文档
+export const listDocuments = () => {
+  return request.get('/documents/list')
+}
+
 export const deleteDocument = (docId: string) => {
   return request.delete(`/documents/${docId}`)
 }

@@ -326,7 +326,6 @@ const sendAudio = async () => {
 
           case 'conversation_id':
             // 会话ID更新
-            console.log('需要更新会话id了', streamData.conversation_id)
             if (streamData.conversation_id) {
               emit('updateConversationId', streamData.conversation_id)
             }

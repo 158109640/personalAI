@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import chat, documents, auth, voice # 👈 导入 chat 路由
 from fastapi.staticfiles import StaticFiles
 import os
+from app.api.test import router as test_llamaindex_router
+
+
 
 app = FastAPI(
   title="个人 AI 研发助理",
@@ -24,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(voice.router)
+app.include_router(test_llamaindex_router)
 
 # ✅ 确保 uploads 目录存在
 os.makedirs("uploads", exist_ok=True)

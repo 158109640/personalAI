@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage
 from app.core.config import settings
 from app.tools import search_web, get_weather, send_email
 from app.services.rag_service import rag_service
+from app.services.rag_llamaindex import rag_llamaindex_service
 from app.models.document import Document
 from app.core.database import get_db
 from sqlalchemy import select
@@ -54,35 +55,23 @@ def supervisor(state: AgentState) -> AgentState:
                 docs = result.scalars().all()
                 return docs
             finally:
-                # 确保连接被释放
                 await db.close()
         return []
 
     docs = loop.run_until_complete(check_docs())
     loop.close()
+
+    print(f"🔍 检查到的文档数量: {len(docs)}")
     
-    # 1.2 如果有文档，尝试 RAG 检索
+    # 1.2 如果有文档，直接走 RAG 分支
     if docs:
-        from app.services.rag_service import rag_service
-        doc_ids = [doc.doc_id for doc in docs]
-        chunks = asyncio.run(rag_service.search_all_documents(
-            doc_ids=doc_ids,
-            query=query,
-            top_k_per_doc=3,
-            final_top_k=3
-        ))
-        
-        if chunks and chunks[0]["score"] > 0.1:
-            print(f"📚 RAG 命中，直接走 need_rag")
-            state["next_step"] = "need_rag"
-            # ===== 直接在这里设置 research_result =====
-            context = "\n\n".join([chunk["content"] for chunk in chunks])
-            state["research_result"] = context
-            print(f"✅ supervisor 中 research_result 已设置，长度: {len(context)}")
-            state["rag_chunks"] = chunks
-            return state
+        print(f"📚 用户有 {len(docs)} 个文档，走 need_rag 分支")
+        state["next_step"] = "need_rag"
+        state["current_status"] = "📚 正在检索文档..."
+        state["doc_ids"] = [doc.doc_id for doc in docs]
+        return state
     
-    # 1.3 构建对话上下文
+    # 1.3 构建对话上下文（无文档时）
     context = ""
     messages = state.get('messages', {})
     if isinstance(messages, dict):
@@ -105,18 +94,17 @@ def supervisor(state: AgentState) -> AgentState:
 用户当前问题：{state['query']}
 
 判断规则：
-1. 如果用户问的是文档中的内容、公司内部信息 → 返回 need_rag
-2. 如果用户问的是新闻、实时信息 → 返回 need_search
-3. 如果用户问的是天气、温度 → 返回 need_weather
-4. 如果用户要求发送邮件 → 返回 need_email
-5. 如果用户可以直接回答（闲聊、常识问题）→ 返回 direct_answer
+1. 如果用户问的是新闻、实时信息 → 返回 need_search
+2. 如果用户问的是天气、温度 → 返回 need_weather
+3. 如果用户要求发送邮件 → 返回 need_email
+4. 如果用户可以直接回答（闲聊、常识问题）→ 返回 direct_answer
 
-只返回 need_rag、need_search、need_weather、need_email 或 direct_answer 中的一个，不要有其他内容。"""
-    
+只返回 need_search、need_weather、need_email 或 direct_answer 中的一个，不要有其他内容。"""
+        
     response = model.invoke([HumanMessage(content=prompt)])
     decision = response.content.strip().lower()
     decision = decision.replace('"', '').replace("'", "").strip()
-    valid_decisions = ["need_rag", "need_search", "need_weather", "need_email", "direct_answer"]
+    valid_decisions = ["need_search", "need_weather", "need_email", "direct_answer"]
     if decision not in valid_decisions:
         print(f"⚠️ 未知决策: {decision}，默认使用 direct_answer")
         decision = "direct_answer"
@@ -124,7 +112,6 @@ def supervisor(state: AgentState) -> AgentState:
     print(f"📋 主管决策: {decision}")
     
     status_map = {
-        "need_rag": "📚 正在检索文档...",
         "need_search": "🔍 正在联网搜索...",
         "need_weather": "🌤️ 正在查询天气...",
         "need_email": "📧 正在准备发送邮件...",
@@ -205,81 +192,79 @@ def email_agent(state: AgentState) -> AgentState:
 
 
 # ============================================================
-# 5. RAG 研究员 Agent
+# 5. RAG 研究员 Agent（已修复 - 强制检索）
 # ============================================================
 async def rag_researcher(state: AgentState) -> AgentState:
     print(f"📚 RAG 研究员正在检索文档: {state['query']}")
     
-    # ===== 如果已经有 research_result，直接返回 =====
-    if state.get('research_result'):
-        print(f"✅ research_result 已存在（长度: {len(state['research_result'])}），跳过检索")
-        state["current_status"] = "📚 检索完成"
-        return state
-    
+    # ===== 获取 doc_ids =====
+    doc_ids = state.get('doc_ids')
     user_id = state.get('user_id', 1)
     
-    from app.models.document import Document
-    from app.core.database import get_db
-    from sqlalchemy import select
-    
-    docs = []
-    async for db in get_db():
-        stmt = select(Document).where(
-            Document.owner_id == user_id,
-            Document.status == "processed"
-        )
-        result = await db.execute(stmt)
-        docs = result.scalars().all()
-        break
-    
-    if not docs:
-        print("❌ 未找到用户文档")
-        state["current_status"] = "📚 未找到相关文档"
-        state['research_result'] = "未找到相关文档"
-        return state
-    
-    print(f"📊 找到 {len(docs)} 个文档")
-    doc_ids = [doc.doc_id for doc in docs]
-    print(f"📊 文档 ID: {doc_ids}")
-    
-    chunks = await rag_service.search_all_documents(
-        doc_ids=doc_ids,
-        query=state['query'],
-        top_k_per_doc=3,
-        final_top_k=3
-    )
-    
-    if chunks:
-        doc_summaries = {}
-        for doc_id in doc_ids:
-            try:
-                # 获取文档的第一个片段作为摘要
-                vector_store = Chroma(
-                    collection_name=f"doc_{doc_id}",
-                    embedding_function=rag_service.embeddings,
-                    persist_directory=VECTOR_STORE_DIR
-                )
-                all_docs = vector_store.get()
-                if all_docs.get("documents"):
-                    doc_summaries[doc_id] = all_docs["documents"][0]
-            except:
-                doc_summaries[doc_id] = ""
-        # 构建上下文：摘要 + 检索片段
-        context_parts = []
-        # 先添加摘要
-        for doc_id, summary in doc_summaries.items():
-            if summary:
-                context_parts.append(f"【文档摘要】{summary}")
+    if not doc_ids:
+        print(f"📊 state 中没有 doc_ids，从数据库查询")
+        from app.models.document import Document
+        from app.core.database import get_db
+        from sqlalchemy import select
         
-        # 再添加检索到的片段
-        for chunk in chunks:
-            context_parts.append(chunk["content"])
+        docs = []
+        async for db in get_db():
+            stmt = select(Document).where(
+                Document.owner_id == user_id,
+                Document.status == "processed"
+            )
+            result = await db.execute(stmt)
+            docs = result.scalars().all()
+            break
         
-        context = "\n\n".join(context_parts)
-        state['research_result'] = context        
-
+        if not docs:
+            print("❌ 未找到用户文档")
+            state["current_status"] = "📚 未找到相关文档"
+            state['research_result'] = "未找到相关文档"
+            return state
+        
+        doc_ids = [doc.doc_id for doc in docs]
+        print(f"📊 从数据库查询到 {len(doc_ids)} 个文档: {doc_ids}")
     else:
-        print("❌ 未找到相关文档片段")
+        print(f"📊 从 state 获取到 {len(doc_ids)} 个文档: {doc_ids}")
+    
+    # ===== 使用 LlamaIndex 检索 =====
+    from app.services.rag_llamaindex import rag_llamaindex_service
+    
+    try:
+        # ===== 关键修复：直接使用 doc_ids，不要再加 doc_ 前缀 =====
+        # 因为 doc_ids 已经是 "1_bfb684cd" 格式
+        # 集合名是 "doc_1_bfb684cd"，由 rag_llamaindex_service 内部处理
+        print(f"📊 直接使用 doc_ids: {doc_ids}")
+
+        print(f"🔍 传入 search_all_documents 的 doc_ids: {doc_ids}")
+        
+        chunks = await rag_llamaindex_service.search_all_documents(
+            doc_ids=doc_ids,  # ← 直接传 doc_ids，不加前缀
+            query=state['query'],
+            top_k=3,
+            similarity_cutoff=0.0
+        )
+        
+        if chunks:
+            context_parts = []
+            for chunk in chunks:
+                filename = chunk.get("filename", "未知文档")
+                content = chunk.get("content", "")
+                context_parts.append(f"【文档：{filename}】\n{content}")
+            
+            context = "\n\n".join(context_parts)
+            state['research_result'] = context
+            print(f"✅ research_result 已设置，包含 {len(chunks)} 个片段")
+            print(f"✅ research_result 预览: {context[:200]}...")
+        else:
+            print("❌ 未找到相关文档片段")
+            state['research_result'] = "未找到相关文档"
+            
+    except Exception as e:
+        print(f"❌ LlamaIndex 检索失败: {e}")
+        import traceback
+        traceback.print_exc()
         state['research_result'] = "未找到相关文档"
     
     state["current_status"] = "📚 检索完成"
@@ -316,8 +301,7 @@ def reply_type_decision(state: AgentState) -> AgentState:
 1. 如果用户要求唱歌、讲故事、说相声、诗歌朗诵、讲笑话等创意/娱乐内容 → 返回 audio
 2. 如果用户要求模仿某个角色说话、配音等 → 返回 audio
 3. 如果用户要求用语音回复 → 返回 audio
-4. 如果用户上一条回复是语音，且当前问题与上一条问题相关或类似(例如：继续唱歌、继续讲故事等，那...呢？)  → 返回 audio
-5. 其他情况（知识问答、天气查询、搜索、闲聊等）→ 返回 text
+4. 其他情况（知识问答、天气查询、搜索、闲聊等）→ 返回 text
 
 只返回 text 或 audio 中的一个单词，不要有其他内容。"""
     
@@ -483,12 +467,10 @@ async def stream_multi_agent(
     # 8.7 流式输出
     reply_type = state.get("reply_type", "text")
     if reply_type == "audio" and state.get('audio_url'):
-        # 语音回复：直接返回音频 URL 和文字
         yield {"type": "reply_type", "content": "audio"}
         yield {"type": "audio", "content": state['audio_url']}
         yield {"type": "done"}
     else:
-        # 文字回复：逐字输出
         yield {"type": "reply_type", "content": "text"}
         content = state['final_answer']
         for char in content:
@@ -503,7 +485,6 @@ async def stream_multi_agent(
 def build_multi_agent():
     workflow = StateGraph(AgentState)
     
-    # 添加节点
     workflow.add_node("supervisor", supervisor)
     workflow.add_node("rag_researcher", rag_researcher)
     workflow.add_node("searcher", searcher)
@@ -512,10 +493,8 @@ def build_multi_agent():
     workflow.add_node("reply_type_decision", reply_type_decision)
     workflow.add_node("answerer", answerer)
     
-    # 设置入口
     workflow.set_entry_point("supervisor")
     
-    # 条件边：supervisor → 各个工具
     workflow.add_conditional_edges(
         "supervisor",
         lambda state: state["next_step"],
@@ -528,22 +507,15 @@ def build_multi_agent():
         }
     )
     
-    # 工具执行后 → 回复类型决策
     workflow.add_edge("rag_researcher", "reply_type_decision")
     workflow.add_edge("searcher", "reply_type_decision")
     workflow.add_edge("weather_agent", "reply_type_decision")
     workflow.add_edge("email_agent", "reply_type_decision")
     
-    # 回复类型决策 → 回答者
     workflow.add_edge("reply_type_decision", "answerer")
-    
-    # 回答者 → 结束
     workflow.add_edge("answerer", END)
     
     return workflow.compile()
 
 
-# ============================================================
-# 10. 实例化
-# ============================================================
 multi_agent = build_multi_agent()

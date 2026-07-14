@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional, List
 import shutil
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.core.database import get_db
 from app.models.document import Document, DocumentStatus
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.rag_llamaindex import rag_llamaindex_service
 
 router = APIRouter(prefix="/documents", tags=["文档管理"])
 
@@ -33,7 +35,7 @@ async def upload_document(
     """上传文档，并创建向量索引"""
     
     # 生成唯一文档 ID
-    doc_id = f"{session_id}_{uuid.uuid4().hex[:8]}"
+    doc_id = f"{current_user.id}_{uuid.uuid4().hex[:8]}"
     
     # 保存文件
     file_path = os.path.join(UPLOAD_DIR, f"{doc_id}_{file.filename}")
@@ -41,12 +43,12 @@ async def upload_document(
         shutil.copyfileobj(file.file, buffer)
     
     try:
-        # 加载并切分文档
-        texts = rag_service.load_document(file_path, file.filename)
-        collection_name = rag_service.create_vector_store(doc_id, texts, file.filename)
-        
-        # 创建向量存储
-        store_path = rag_service.create_vector_store(doc_id, texts, file.filename)
+        texts = rag_llamaindex_service.load_document(file_path, file.filename)
+        collection_name = rag_llamaindex_service.create_vector_store(
+            doc_id=doc_id,
+            texts=texts,
+            filename=file.filename
+        )
         
         # 🔥 保存文档记录到数据库
         new_doc = Document(
@@ -126,12 +128,12 @@ async def query_document(
     context = "\n\n".join(sources)
     prompt = f"""请根据以下文档片段回答用户的问题。如果片段中没有相关信息，请直接说"文档中没有提到相关内容"。
 
-文档片段：
-{context}
+    文档片段：
+    {context}
 
-用户问题：{request.question}
+    用户问题：{request.question}
 
-请基于文档片段给出准确、简洁的回答。"""
+    请基于文档片段给出准确、简洁的回答。"""
     
     messages = [{"role": "user", "content": prompt}]
     answer = ai_service.get_response(messages)
@@ -139,6 +141,19 @@ async def query_document(
     return QueryResponse(answer=answer, sources=sources)
 
 VECTOR_STORE_DIR = "vector_store"   
+
+@router.get("/list")
+async def list_documents(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取用户所有文档"""
+    stmt = select(Document).where(
+        Document.owner_id == current_user.id
+    )
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+    return docs
 
 @router.delete("/{doc_id}")
 async def delete_document(
