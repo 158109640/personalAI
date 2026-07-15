@@ -39,39 +39,59 @@ def supervisor(state: AgentState) -> AgentState:
     user_id = state.get('user_id', 1)
     query = state['query']
     
-    # 1.1 检查用户是否有文档
     import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    from app.core.database import AsyncSessionLocal
+    from sqlalchemy import select
     
     async def check_docs():
-        async for db in get_db():
-            try:
-                stmt = select(Document).where(
-                    Document.owner_id == user_id,
-                    Document.status == "processed"
-                )
-                result = await db.execute(stmt)
-                docs = result.scalars().all()
-                return docs
-            finally:
-                await db.close()
-        return []
-
-    docs = loop.run_until_complete(check_docs())
-    loop.close()
-
-    print(f"🔍 检查到的文档数量: {len(docs)}")
+        async with AsyncSessionLocal() as db:
+            stmt = select(Document).where(
+                Document.owner_id == user_id,
+                Document.status == "processed"
+            )
+            result = await db.execute(stmt)
+            docs = result.scalars().all()
+            return docs
     
-    # 1.2 如果有文档，直接走 RAG 分支
+    docs = asyncio.run(check_docs())
+    
+    # ===== 如果有文档，让大模型判断是否相关 =====
     if docs:
-        print(f"📚 用户有 {len(docs)} 个文档，走 need_rag 分支")
-        state["next_step"] = "need_rag"
-        state["current_status"] = "📚 正在检索文档..."
-        state["doc_ids"] = [doc.doc_id for doc in docs]
-        return state
+        # 获取文档摘要（只取前几个字符）
+        doc_summaries = []
+        for doc in docs[:3]:  # 只取前3个文档
+            doc_summaries.append(f"- {doc.filename}: {doc.content[:100] if doc.content else '无摘要'}...")
+        docs_text = "\n".join(doc_summaries)
+        
+        # 让大模型判断
+        judge_prompt = f"""用户有以下几个文档：
+{docs_text}
+
+用户当前问题：{query}
+
+请判断：用户的问题是否与这些文档的内容相关？
+- 如果用户问的是文档中的内容（如简历信息、文档内容等），返回 need_rag
+- 如果用户问的是天气、新闻、实时信息、通用知识等，返回 direct_answer
+- 如果用户问的是文档中不存在的具体信息，返回 direct_answer
+
+只返回 need_rag 或 direct_answer，不要有其他内容。"""
+        
+        response = model.invoke([HumanMessage(content=judge_prompt)])
+        decision = response.content.strip().lower().replace('"', '').replace("'", "").strip()
+        
+        if decision == "need_rag":
+            print(f"📚 大模型判断需要 RAG，走 need_rag 分支")
+            state["next_step"] = "need_rag"
+            state["current_status"] = "📚 正在检索文档..."
+            state["doc_ids"] = [doc.doc_id for doc in docs]
+            return state
+        else:
+            print(f"📚 大模型判断不需要 RAG，走 direct_answer")
+            # 继续往下走 direct_answer 逻辑
+    else:
+        print(f"📚 用户没有文档，走决策逻辑")
     
-    # 1.3 构建对话上下文（无文档时）
+    # ===== 后续决策逻辑（无文档或不需要 RAG 时） =====
     context = ""
     messages = state.get('messages', {})
     if isinstance(messages, dict):
@@ -85,13 +105,12 @@ def supervisor(state: AgentState) -> AgentState:
         role = "用户" if msg.get('role') == 'user' else "助手"
         context += f"{role}: {msg.get('content', '')}\n"
     
-    # 1.4 调用大模型决策
     prompt = f"""你是主编，负责判断用户问题需要调用哪个工具。
 
 对话历史：
 {context if context else "（无历史对话）"}
 
-用户当前问题：{state['query']}
+用户当前问题：{query}
 
 判断规则：
 1. 如果用户问的是新闻、实时信息 → 返回 need_search
@@ -122,7 +141,6 @@ def supervisor(state: AgentState) -> AgentState:
     return state
 
 
-# ============================================================
 # 2. 搜索员 Agent：执行搜索
 # ============================================================
 def searcher(state: AgentState) -> AgentState:
