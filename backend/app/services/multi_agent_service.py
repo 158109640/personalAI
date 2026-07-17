@@ -31,7 +31,6 @@ model = ChatOpenAI(
     base_url=settings.deepseek_base_url
 )
 
-
 # ============================================================
 # 1. 主管 Agent：判断任务并分配工具
 # ============================================================
@@ -39,6 +38,7 @@ def supervisor(state: AgentState) -> AgentState:
     user_id = state.get('user_id', 1)
     query = state['query']
     
+    # ===== 1. 检查用户是否有文档 =====
     import asyncio
     from app.core.database import AsyncSessionLocal
     from sqlalchemy import select
@@ -55,27 +55,33 @@ def supervisor(state: AgentState) -> AgentState:
     
     docs = asyncio.run(check_docs())
     
-    # ===== 如果有文档，让大模型判断是否相关 =====
+    # ===== 保存 doc_ids 到 state =====
+    doc_ids = []
     if docs:
-        # 获取文档摘要（只取前几个字符）
+        doc_ids = [doc.doc_id for doc in docs]
+        state["doc_ids"] = doc_ids
+        print(f"📚 supervisor 检测到 {len(doc_ids)} 个文档: {doc_ids}")
+    
+    # ===== 3. 单一意图：判断是否需要 RAG =====
+    if docs:
+        # 让大模型判断是否与文档相关
         doc_summaries = []
-        for doc in docs[:3]:  # 只取前3个文档
+        for doc in docs[:3]:
             doc_summaries.append(f"- {doc.filename}: {doc.content[:100] if doc.content else '无摘要'}...")
         docs_text = "\n".join(doc_summaries)
         
-        # 让大模型判断
         judge_prompt = f"""用户有以下几个文档：
-{docs_text}
+        {docs_text}
 
-用户当前问题：{query}
+        用户当前问题：{query}
 
-请判断：用户的问题是否与这些文档的内容相关？
-- 如果用户问的是文档中的内容（如简历信息、文档内容等），返回 need_rag
-- 如果用户问的是天气、新闻、实时信息、通用知识等，返回 direct_answer
-- 如果用户问的是文档中不存在的具体信息，返回 direct_answer
+        请判断：用户的问题是否与这些文档的内容相关？
+        - 如果用户问的是文档中的内容（如简历信息、文档内容等），返回 need_rag
+        - 如果用户问的是天气、新闻、实时信息、通用知识等，返回 direct_answer
+        - 如果用户问的是文档中不存在的具体信息，返回 direct_answer
 
-只返回 need_rag 或 direct_answer，不要有其他内容。"""
-        
+        只返回 need_rag 或 direct_answer，不要有其他内容。"""
+                
         response = model.invoke([HumanMessage(content=judge_prompt)])
         decision = response.content.strip().lower().replace('"', '').replace("'", "").strip()
         
@@ -83,15 +89,11 @@ def supervisor(state: AgentState) -> AgentState:
             print(f"📚 大模型判断需要 RAG，走 need_rag 分支")
             state["next_step"] = "need_rag"
             state["current_status"] = "📚 正在检索文档..."
-            state["doc_ids"] = [doc.doc_id for doc in docs]
             return state
         else:
-            print(f"📚 大模型判断不需要 RAG，走 direct_answer")
-            # 继续往下走 direct_answer 逻辑
-    else:
-        print(f"📚 用户没有文档，走决策逻辑")
+            print(f"📚 大模型判断不需要 RAG，走决策逻辑")
     
-    # ===== 后续决策逻辑（无文档或不需要 RAG 时） =====
+    # ===== 4. 单一意图：判断其他工具 =====
     context = ""
     messages = state.get('messages', {})
     if isinstance(messages, dict):
@@ -107,18 +109,18 @@ def supervisor(state: AgentState) -> AgentState:
     
     prompt = f"""你是主编，负责判断用户问题需要调用哪个工具。
 
-对话历史：
-{context if context else "（无历史对话）"}
+    对话历史：
+    {context if context else "（无历史对话）"}
 
-用户当前问题：{query}
+    用户当前问题：{query}
 
-判断规则：
-1. 如果用户问的是新闻、实时信息 → 返回 need_search
-2. 如果用户问的是天气、温度 → 返回 need_weather
-3. 如果用户要求发送邮件 → 返回 need_email
-4. 如果用户可以直接回答（闲聊、常识问题）→ 返回 direct_answer
+    判断规则：
+    1. 如果用户问的是新闻、实时信息 → 返回 need_search
+    2. 如果用户问的是天气、温度 → 返回 need_weather
+    3. 如果用户要求发送邮件 → 返回 need_email
+    4. 如果用户可以直接回答（闲聊、常识问题）→ 返回 direct_answer
 
-只返回 need_search、need_weather、need_email 或 direct_answer 中的一个，不要有其他内容。"""
+    只返回 need_search、need_weather、need_email 或 direct_answer 中的一个，不要有其他内容。"""
         
     response = model.invoke([HumanMessage(content=prompt)])
     decision = response.content.strip().lower()
@@ -140,7 +142,7 @@ def supervisor(state: AgentState) -> AgentState:
     state["next_step"] = decision
     return state
 
-
+# ============================================================
 # 2. 搜索员 Agent：执行搜索
 # ============================================================
 def searcher(state: AgentState) -> AgentState:
@@ -210,13 +212,13 @@ def email_agent(state: AgentState) -> AgentState:
 
 
 # ============================================================
-# 5. RAG 研究员 Agent（已修复 - 强制检索）
+# 5. RAG 研究员 Agent
 # ============================================================
 async def rag_researcher(state: AgentState) -> AgentState:
     print(f"📚 RAG 研究员正在检索文档: {state['query']}")
     
     # ===== 获取 doc_ids =====
-    doc_ids = state.get('doc_ids')
+    doc_ids = state.get('doc_ids', [])
     user_id = state.get('user_id', 1)
     
     if not doc_ids:
@@ -250,15 +252,10 @@ async def rag_researcher(state: AgentState) -> AgentState:
     from app.services.rag_llamaindex import rag_llamaindex_service
     
     try:
-        # ===== 关键修复：直接使用 doc_ids，不要再加 doc_ 前缀 =====
-        # 因为 doc_ids 已经是 "1_bfb684cd" 格式
-        # 集合名是 "doc_1_bfb684cd"，由 rag_llamaindex_service 内部处理
-        print(f"📊 直接使用 doc_ids: {doc_ids}")
-
         print(f"🔍 传入 search_all_documents 的 doc_ids: {doc_ids}")
         
         chunks = await rag_llamaindex_service.search_all_documents(
-            doc_ids=doc_ids,  # ← 直接传 doc_ids，不加前缀
+            doc_ids=doc_ids,
             query=state['query'],
             top_k=3,
             similarity_cutoff=0.0
@@ -344,9 +341,11 @@ def answerer(state: AgentState) -> AgentState:
     """
     reply_type = state.get("reply_type", "text")
     
-    # ===== 清理 research_result =====
+    # ===== 确保 research_result 有值 =====
     research_result = state.get('research_result', '')
-    print(f"📊 原始123 research_result: {research_result}")
+    if research_result is None:
+        research_result = ""
+        state['research_result'] = research_result
     
     # 7.1 生成内容（文字）
     if research_result and len(str(research_result)) > 10:
@@ -381,11 +380,16 @@ def answerer(state: AgentState) -> AgentState:
 
 请根据对话历史理解上下文，回答用户问题。"""
     
-    print(f"📊 完整 prompt 预览:\n{prompt[:500]}...")
-    
     response = model.invoke([HumanMessage(content=prompt)])
     content = response.content
-    print(f"📊 大模型返回: {content[:200]}...")
+    
+    # ===== 确保 content 不为 None =====
+    if content is None:
+        content = "抱歉，我无法回答这个问题。"
+    elif not isinstance(content, str):
+        content = str(content)
+    elif content.strip() == "":
+        content = "抱歉，我无法回答这个问题。"
     
     # ===== 7.2 根据回复类型处理 =====
     if reply_type == "audio":
@@ -399,14 +403,14 @@ def answerer(state: AgentState) -> AgentState:
         原始回答：{content}
 
         只返回转换后的语音文本，不要有其他内容。"""
-        
+
         audio_response = model.invoke([HumanMessage(content=audio_prompt)])
         voice_text = audio_response.content
         state['final_answer'] = voice_text
-        
+
         # ===== 第二步：百度 TTS 合成 =====
         try:
-            audio_url = text_to_speech(voice_text) 
+            audio_url = text_to_speech(voice_text)
             if audio_url:
                 state['audio_url'] = audio_url
                 print(f"🔊 TTS 合成成功: {audio_url}")
@@ -449,6 +453,8 @@ async def stream_multi_agent(
         "next_step": "",
         "user_id": user_id,
         "reply_type": "text",
+        "sub_queries": [],
+        "doc_ids": [],
         "audio_url": ""
     }
     
@@ -461,13 +467,18 @@ async def stream_multi_agent(
         "need_search": "🔍 正在联网搜索...",
         "need_weather": "🌤️ 正在查询天气...",
         "need_email": "📧 正在准备发送邮件...",
+        "parallel_tasks": "📋 正在并行处理...", 
         "direct_answer": "✍️ 正在生成回答..."
     }
     yield {"type": "status", "content": status_map.get(decision, "⏳ 处理中...")}
     
     # 8.4 执行对应的工具 Agent
+    print(f"📋 开始执行 {decision} Agent")
+
     if decision == "need_rag":
         state = await rag_researcher(state)
+    elif decision == "parallel_tasks":
+        state = await parallel_tasks(state)    
     elif decision == "need_search":
         state = await asyncio.to_thread(searcher, state)
     elif decision == "need_weather":
@@ -536,4 +547,4 @@ def build_multi_agent():
     return workflow.compile()
 
 
-multi_agent = build_multi_agent()
+multi_agent = build_multi_agent() 

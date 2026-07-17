@@ -158,11 +158,12 @@ async def chat(
     })
     
     type = result["reply_type"]
+    print('这里是类型:', type)
     answer = result["final_answer"] if type == "text" else result["audio_url"]
-    
     # 4. 保存 AI 回复
+    print('到这里了 哈哈哈哈', answer)
     await conversation_service.add_message(db, conv.id, "assistant", answer, processed_files, type)
-    
+    print('到哪里了 哈哈哈哈')
     # 5. 更新标题（如果是新对话）
     msg_count = len(await conversation_service.get_conversation_messages(db, conv.id))
     if msg_count <= 2:
